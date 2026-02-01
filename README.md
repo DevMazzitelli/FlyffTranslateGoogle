@@ -1,6 +1,6 @@
 # Flyff Translate
 
-https://github.com/DevMazzitelli/FlyffTranslateGoogle/raw/master/2026-02-01%2021-23-55.mp4
+![Demo](demo.gif)
 
 ---
 
