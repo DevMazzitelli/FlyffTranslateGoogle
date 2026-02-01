@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Flyff Translate",
+  "version": "1.0.0",
+  "description": "Traduisez du texte français vers anglais dans Flyff Universe en appuyant sur Alt",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://api-free.deepl.com/*",
+    "*://*.flyff.com/*",
+    "*://universe.flyff.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.flyff.com/*", "*://universe.flyff.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
