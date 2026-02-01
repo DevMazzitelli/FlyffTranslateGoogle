@@ -1,5 +1,5 @@
 // Flyff Translate - Content Script
-// Appuyez sur Alt gauche pour traduire le texte sélectionné (FR → EN)
+// Appuyez sur Alt gauche pour traduire le texte du champ actif (FR → EN)
 
 (function() {
   'use strict';
@@ -8,47 +8,66 @@
 
   document.addEventListener('keydown', async (event) => {
     if (event.code === 'AltLeft' && !event.repeat && !isTranslating) {
-      const selectedText = getSelectedText();
+      const textInfo = getTextToTranslate();
 
-      if (selectedText && selectedText.trim().length > 0) {
+      if (textInfo && textInfo.text.trim().length > 0) {
         event.preventDefault();
-        await translateAndReplace(selectedText);
+        await translateAndReplace(textInfo);
       }
     }
   });
 
-  function getSelectedText() {
+  function getTextToTranslate() {
     const activeElement = document.activeElement;
 
     if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
       const start = activeElement.selectionStart;
       const end = activeElement.selectionEnd;
+
+      // Si du texte est sélectionné, traduire la sélection
       if (start !== end) {
-        return activeElement.value.substring(start, end);
+        return {
+          text: activeElement.value.substring(start, end),
+          isFullField: false,
+          element: activeElement
+        };
+      }
+
+      // Sinon, traduire tout le contenu du champ
+      if (activeElement.value.trim().length > 0) {
+        return {
+          text: activeElement.value,
+          isFullField: true,
+          element: activeElement
+        };
       }
     }
 
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 0) {
-      return selection.toString();
+      return {
+        text: selection.toString(),
+        isFullField: false,
+        element: null
+      };
     }
 
     return null;
   }
 
-  async function translateAndReplace(text) {
+  async function translateAndReplace(textInfo) {
     isTranslating = true;
 
     try {
       const response = await chrome.runtime.sendMessage({
         action: 'translate',
-        text: text,
+        text: textInfo.text,
         sourceLang: 'FR',
         targetLang: 'EN'
       });
 
       if (response.translatedText) {
-        replaceSelectedText(response.translatedText);
+        replaceText(response.translatedText, textInfo);
       }
     } catch (error) {
       console.error('Flyff Translate - Erreur:', error);
@@ -57,23 +76,31 @@
     }
   }
 
-  function replaceSelectedText(newText) {
-    const activeElement = document.activeElement;
+  function replaceText(newText, textInfo) {
+    // Si c'est un champ input/textarea
+    if (textInfo.element && (textInfo.element.tagName === 'INPUT' || textInfo.element.tagName === 'TEXTAREA')) {
+      if (textInfo.isFullField) {
+        // Remplacer tout le contenu du champ
+        textInfo.element.value = newText;
+        textInfo.element.selectionStart = newText.length;
+        textInfo.element.selectionEnd = newText.length;
+      } else {
+        // Remplacer seulement la sélection
+        const start = textInfo.element.selectionStart;
+        const end = textInfo.element.selectionEnd;
+        const value = textInfo.element.value;
 
-    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-      const start = activeElement.selectionStart;
-      const end = activeElement.selectionEnd;
-      const value = activeElement.value;
+        textInfo.element.value = value.substring(0, start) + newText + value.substring(end);
+        textInfo.element.selectionStart = start + newText.length;
+        textInfo.element.selectionEnd = start + newText.length;
+      }
 
-      activeElement.value = value.substring(0, start) + newText + value.substring(end);
-      activeElement.selectionStart = start + newText.length;
-      activeElement.selectionEnd = start + newText.length;
-
-      activeElement.dispatchEvent(new Event('input', { bubbles: true }));
-      activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+      textInfo.element.dispatchEvent(new Event('input', { bubbles: true }));
+      textInfo.element.dispatchEvent(new Event('change', { bubbles: true }));
       return;
     }
 
+    // Pour les éléments contenteditable
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
