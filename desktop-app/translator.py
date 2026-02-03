@@ -9,7 +9,12 @@ import pyautogui
 import requests
 import time
 import sys
+import os
 from threading import Thread
+
+# System tray
+import pystray
+from PIL import Image, ImageDraw
 
 # Rendre pyautogui ultra rapide (quasi invisible)
 pyautogui.PAUSE = 0.005  # Délai minimal entre les actions
@@ -28,12 +33,33 @@ DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
 is_translating = False
 last_translate_time = 0
 
+# Référence globale pour le tray icon
+tray_icon = None
+
+
+def create_icon_image():
+    """Crée une icône simple pour le system tray"""
+    # Créer une image 64x64 avec un fond bleu et un T blanc
+    size = 64
+    image = Image.new('RGB', (size, size), color=(41, 128, 185))  # Bleu
+    draw = ImageDraw.Draw(image)
+
+    # Dessiner un "T" blanc pour "Translate"
+    draw.rectangle([20, 15, 44, 22], fill='white')  # Barre horizontale du T
+    draw.rectangle([28, 15, 36, 50], fill='white')  # Barre verticale du T
+
+    return image
+
+
+def on_quit(icon, item):
+    """Quitter l'application"""
+    icon.stop()
+    os._exit(0)
+
 
 def translate_text(text: str) -> str:
     """Traduit le texte via l'API DeepL"""
     if not DEEPL_API_KEY:
-        print("[ERREUR] Clé API DeepL non configurée!")
-        print("Obtenez une clé gratuite sur: https://www.deepl.com/pro-api")
         return None
 
     if not text or not text.strip():
@@ -59,14 +85,9 @@ def translate_text(text: str) -> str:
             translated = result["translations"][0]["text"]
             return translated
         else:
-            print(f"[ERREUR] API DeepL: {response.status_code} - {response.text}")
             return None
 
-    except requests.exceptions.Timeout:
-        print("[ERREUR] Timeout - L'API DeepL ne répond pas")
-        return None
-    except Exception as e:
-        print(f"[ERREUR] {e}")
+    except:
         return None
 
 
@@ -123,59 +144,58 @@ def on_translate():
     last_translate_time = current_time
 
     try:
-        print("\n[...] Traduction en cours...")
-
         # Récupérer le texte sélectionné
         selected_text = get_selected_text()
 
         if not selected_text:
-            print("[INFO] Aucun texte sélectionné")
             return
-
-        print(f"[ORIGINAL] {selected_text[:50]}{'...' if len(selected_text) > 50 else ''}")
 
         # Traduire
         translated = translate_text(selected_text)
 
         if translated:
-            print(f"[TRADUIT] {translated[:50]}{'...' if len(translated) > 50 else ''}")
             # Coller le texte traduit
             paste_text(translated)
-            print("[OK] Texte traduit et collé!")
-        else:
-            print("[ERREUR] Échec de la traduction")
     finally:
         is_translating = False
 
 
-def main():
-    print("=" * 50)
-    print("  FLYFF TRANSLATE DESKTOP")
-    print("  Traduction système-wide avec DeepL")
-    print("=" * 50)
-    print()
-
-    if not DEEPL_API_KEY:
-        print("[!] ATTENTION: Clé API DeepL non configurée!")
-        print("    Modifiez DEEPL_API_KEY dans le fichier translator.py")
-        print("    Obtenez une clé gratuite: https://www.deepl.com/pro-api")
-        print()
-
-    print(f"[CONFIG] {SOURCE_LANG} -> {TARGET_LANG}")
-    print(f"[HOTKEY] Appuyez sur '{HOTKEY.upper()}' pour traduire")
-    print(f"[QUIT]   Appuyez sur 'Ctrl+Q' pour quitter")
-    print()
-    print("En attente de traduction...")
-    print("-" * 50)
-
+def setup_keyboard():
+    """Configure les raccourcis clavier"""
     # Enregistrer le raccourci clavier (Alt seul)
     keyboard.on_release_key(HOTKEY, lambda e: on_translate(), suppress=False)
 
     # Raccourci pour quitter
-    keyboard.add_hotkey("ctrl+q", lambda: sys.exit(0))
+    keyboard.add_hotkey("ctrl+q", lambda: os._exit(0))
 
-    # Garder le programme en cours d'exécution
+    # Garder le thread actif
     keyboard.wait()
+
+
+def main():
+    global tray_icon
+
+    # Lancer les raccourcis clavier dans un thread séparé
+    keyboard_thread = Thread(target=setup_keyboard, daemon=True)
+    keyboard_thread.start()
+
+    # Créer le menu du system tray
+    menu = pystray.Menu(
+        pystray.MenuItem(f"Flyff Translate ({SOURCE_LANG} → {TARGET_LANG})", lambda: None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Quitter", on_quit)
+    )
+
+    # Créer l'icône du system tray
+    tray_icon = pystray.Icon(
+        "FlyffTranslate",
+        create_icon_image(),
+        "Flyff Translate - Appuyez sur Alt pour traduire",
+        menu
+    )
+
+    # Lancer le system tray (bloquant)
+    tray_icon.run()
 
 
 if __name__ == "__main__":
